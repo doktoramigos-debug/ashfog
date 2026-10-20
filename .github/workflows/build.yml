@@ -1,0 +1,28 @@
+name: build-ps2
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build ELF in ps2dev image
+        run: |
+          set -o pipefail
+          mkdir -p out
+          { echo "== repo files =="; find . -not -path './.git/*' -not -path './out/*' | head -60; } | tee out/build.log
+          M=$(find . -name Makefile -not -path './.git/*' | head -1)
+          [ -n "$M" ] || { echo "::error::Makefile not found in repo - upload project files"; exit 1; }
+          D=$(dirname "$M"); echo "Makefile dir: $D" | tee -a out/build.log
+          docker run --rm -v "$PWD/$D":/src -w /src ps2dev/ps2dev:latest sh -c "(which make >/dev/null || apk add --no-cache make) && make all" 2>&1 | tee -a out/build.log
+          cp "$D/ashfog.elf" out/
+      - name: Show errors
+        if: failure()
+        run: |
+          grep -iE "error|undefined|not found|No such|No rule" out/build.log | head -9 | while IFS= read -r l; do echo "::error::$l"; done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ashfog-elf-or-log
+          path: out/
